@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <title>title</title>
+    <!-- <link rel="stylesheet" href="style.css"> -->
+    <script>
+        var ws = new WebSocket('ws://192.168.1.59:3000');
+    
+        // event emmited when connected
+        ws.onopen = function () {
+            console.log('websocket is connected ...')
+    
+            // sending a send event to websocket server
+            ws.send('connected')
+        }
+    
+        // event emmited when receiving message 
+        ws.onmessage = function (ev) {
+            let doorStatus = document.getElementById("doorStatus")
+            console.log(ev);
+            doorStatus.innerHTML = ev.data === "true" ? "OPEN" : "CLOSED"
+        }
+    </script>
+  </head>
+  <body>
+      <h1>The door is currently: <div id="doorStatus">UNKNOWN</div></h1>
+  </body>
+</html>
+
