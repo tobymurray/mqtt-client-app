@@ -13,92 +13,92 @@ const char ssid[] = SSID;
 const char password[] = PASSWORD;
 const byte mqtt_server_ip[] = MQTT_SERVER_IP;
 const int mqtt_server_port = MQTT_SERVER_PORT;
+const char STATE_OF_HEALTH[] = "stateOfHealth";
+const char DOOR_STATUS[] = "doorStatus";
 
 WiFiClient espClient;
 PubSubClient client(espClient);
 long lastMsg = 0;
 char msg[50];
+char json[128];
 int message_number = 0;
 volatile bool oldDoorIsOpen = true;
 volatile bool doorOpen = true;
 
-void publishWifiNotConnectedMessage(char json[]) {
+bool publishWifiNotConnectedMessage(char json[]) {
   StaticJsonBuffer<200> jsonBuffer;
   JsonObject& messageBody = jsonBuffer.createObject();
   messageBody["wifiConnectionStatus"] = "notConnected";
   messageBody.printTo(json, 128);
-  client.publish("stateOfHealth", json);
+  return client.publish(STATE_OF_HEALTH, json);
 }
 
-void publishWifiConnectingMessage(char json[]) {
+bool publishWifiConnectingMessage(char json[]) {
   StaticJsonBuffer<200> jsonBuffer;
   JsonObject& messageBody = jsonBuffer.createObject();
   messageBody["wifiConnectionStatus"] = "connecting";
   messageBody["ssid"] = ssid;
   messageBody.printTo(json, 128);
-  client.publish("stateOfHealth", json);
+  return client.publish(STATE_OF_HEALTH, json);
 }
 
-void publishWifiConnectedMessage(char json[]) {
+bool publishWifiConnectedMessage(char json[]) {
   StaticJsonBuffer<200> jsonBuffer;
   JsonObject& messageBody = jsonBuffer.createObject();
   messageBody["wifiConnectionStatus"] = "connected";
   messageBody["ipAddress"] = WiFi.localIP().toString();
   messageBody.printTo(json, 128);
-  client.publish("stateOfHealth", json);
+  return client.publish(STATE_OF_HEALTH, json);
 }
 
-void publishMqttServerConnectingMessage(char json[]) {
+bool publishMqttServerConnectingMessage(char json[]) {
   StaticJsonBuffer<200> jsonBuffer;
   JsonObject& messageBody = jsonBuffer.createObject();
   messageBody["mqttConnectionState"] = "connecting";
   messageBody.printTo(json, 128);
-  client.publish("stateOfHealth", json);
+  return client.publish(STATE_OF_HEALTH, json);
 }
 
-void publishMqttServerConnectionStateMessage(char json[]) {
+bool publishMqttServerConnectionStateMessage(char json[]) {
   StaticJsonBuffer<200> jsonBuffer;
   JsonObject& messageBody = jsonBuffer.createObject();
   messageBody["mqttConnectionState"] = client.state();
   messageBody.printTo(json, 128);
-  client.publish("stateOfHealth", json);
+  return client.publish(STATE_OF_HEALTH, json);
 }
 
-void publishDoorStatusChangedMessage(char json[], bool doorOpen) {
+bool publishDoorStatusChangedMessage(char json[], bool doorOpen) {
   ++message_number;
   StaticJsonBuffer<200> jsonBuffer;
   JsonObject& messageBody = jsonBuffer.createObject();
   messageBody["open"] = doorOpen;
   messageBody["messageNumber"] = message_number;   
   messageBody.printTo(json, 128);
-  client.publish("doorStatus", json, true);
+  return client.publish(DOOR_STATUS, json, true);
 }
 
 void set_up_wifi() {
-  char json[128];
-  
-  publishWifiNotConnectedMessage(json);
+  Serial.print(publishWifiNotConnectedMessage(json));
   Serial.println(json);
 
-  publishWifiConnectingMessage(json);
+  Serial.print(publishWifiConnectingMessage(json));
   Serial.println(json);
   
   WiFi.begin(ssid, password);
 
   while (WiFi.status() != WL_CONNECTED) {
     delay(1000);
-    publishWifiConnectingMessage(json);
+    Serial.print(publishWifiConnectingMessage(json));
     Serial.println(json);
   }
 
-  publishWifiConnectedMessage(json);
+  Serial.print(publishWifiConnectedMessage(json));
   Serial.println(json);
 }
 
 void reconnect() {
-  char json[128];
   while (!client.connected()) {
-    publishMqttServerConnectingMessage(json);
+    Serial.print(publishMqttServerConnectingMessage(json));
     Serial.println(json);
     // Create a random client ID
     String clientId = "ESP32Client-";
@@ -111,13 +111,12 @@ void reconnect() {
     }
 
     // Publish the connection result
-    char json[128];
-    publishMqttServerConnectionStateMessage(json);
+    Serial.print(publishMqttServerConnectionStateMessage(json));
     Serial.println(json);
   }
 }
 
-void doorStatusChanged( ){
+void doorStatusChanged() {
   doorOpen = digitalRead(SWITCH_GPIO) == 0;
 }
 
@@ -137,12 +136,16 @@ void setup() {
   
   set_up_wifi();
   client.setServer(mqtt_server_ip, mqtt_server_port);
+
+  // Set the initial state of the door
+  doorStatusChanged();
+  Serial.print(publishDoorStatusChangedMessage(json, doorOpen));
+  Serial.println(json);
 }
 
 void loop() {
-  char json[128];
   if (!client.connected()) {
-    publishMqttServerConnectionStateMessage(json);
+    Serial.print(publishMqttServerConnectionStateMessage(json));
     Serial.println(json);
     reconnect();
   }
@@ -155,7 +158,7 @@ void loop() {
     lastMsg = now;
     
     if (doorOpen != oldDoorIsOpen) {
-      publishDoorStatusChangedMessage(json, doorOpen);
+      Serial.print(publishDoorStatusChangedMessage(json, doorOpen));
       Serial.println(json);
 
       oldDoorIsOpen = doorOpen;
