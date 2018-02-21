@@ -20,6 +20,7 @@ const char DOOR_STATUS[] = "doorStatus";
 typedef struct MqttMessage {
   char topic[128];
   char body[128];
+  bool retained;
 };
 MqttMessage mqttMessage;
 
@@ -37,7 +38,15 @@ bool publishMessage(MqttMessage &mqttMessage) {
   MqttMessage newMessage;
   strcpy(newMessage.topic, mqttMessage.topic);
   strcpy(newMessage.body, mqttMessage.body);
+  newMessage.retained = mqttMessage.retained;
   return messageQueue.push(&newMessage);
+}
+
+void print(MqttMessage &mqttMessage) {
+  Serial.print("Topic: ");
+  Serial.print(mqttMessage.topic);
+  Serial.print(" Body: ");
+  Serial.println(mqttMessage.body);
 }
 
 bool publishWifiNotConnectedMessage(MqttMessage &mqttMessage) {
@@ -89,43 +98,39 @@ bool publishMqttServerConnectionStateMessage(MqttMessage &mqttMessage) {
 
 bool publishDoorStatusChangedMessage(MqttMessage &mqttMessage, bool doorOpen) {
   strcpy(mqttMessage.topic, DOOR_STATUS);
+  mqttMessage.retained = true;
   ++message_number;
   StaticJsonBuffer<200> jsonBuffer;
   JsonObject& messageBody = jsonBuffer.createObject();
   messageBody["open"] = doorOpen;
   messageBody["messageNumber"] = message_number;   
   messageBody.printTo(mqttMessage.body, 128);
-  return client.publish(mqttMessage.topic, mqttMessage.body, true);
+  return publishMessage(mqttMessage);
 }
 
 void set_up_wifi() {
   Serial.print(publishWifiNotConnectedMessage(mqttMessage));
-  Serial.print(mqttMessage.topic);
-  Serial.println(mqttMessage.body);
+  print(mqttMessage);
 
   Serial.print(publishWifiConnectingMessage(mqttMessage));
-  Serial.print(mqttMessage.topic);
-  Serial.println(mqttMessage.body);
+  print(mqttMessage);
   
   WiFi.begin(ssid, password);
 
   while (WiFi.status() != WL_CONNECTED) {
     delay(1000);
     Serial.print(publishWifiConnectingMessage(mqttMessage));
-    Serial.print(mqttMessage.topic);
-    Serial.println(mqttMessage.body);
+    print(mqttMessage);
   }
 
   Serial.print(publishWifiConnectedMessage(mqttMessage));
-  Serial.print(mqttMessage.topic);
-  Serial.println(mqttMessage.body);
+  print(mqttMessage);
 }
 
 void reconnect() {
   while (!client.connected()) {
     Serial.print(publishMqttServerConnectingMessage(mqttMessage));
-    Serial.print(mqttMessage.topic);
-    Serial.println(mqttMessage.body);
+    print(mqttMessage);
     // Create a random client ID
     String clientId = "ESP32Client-";
     clientId += String(random(0xffff), HEX);
@@ -138,13 +143,20 @@ void reconnect() {
 
     // Publish the connection result
     Serial.print(publishMqttServerConnectionStateMessage(mqttMessage));
-    Serial.print(mqttMessage.topic);
-    Serial.println(mqttMessage.body);
+    print(mqttMessage);;
   }
 }
 
 void doorStatusChanged() {
   doorOpen = digitalRead(SWITCH_GPIO) == 0;
+}
+
+void publishQueuedMessage() {
+    MqttMessage oldestMessage;
+    messageQueue.pop(&oldestMessage);
+    Serial.print("  Queued Message: ");
+    Serial.print(client.publish(oldestMessage.topic, oldestMessage.body));
+    print(oldestMessage);
 }
 
 void setup() {
@@ -167,24 +179,13 @@ void setup() {
   // Set the initial state of the door
   doorStatusChanged();
   Serial.print(publishDoorStatusChangedMessage(mqttMessage, doorOpen));
-  Serial.print(mqttMessage.topic);
-  Serial.println(mqttMessage.body);
-}
-
-void publishQueuedMessage() {
-    MqttMessage oldestMessage;
-    messageQueue.pop(&oldestMessage);
-    Serial.print("  Queued Message: ");
-    Serial.print(client.publish(oldestMessage.topic, oldestMessage.body));
-    Serial.print(oldestMessage.topic);
-    Serial.println(oldestMessage.body);
+  print(mqttMessage);
 }
 
 void loop() {
   if (!client.connected()) {
     Serial.print(publishMqttServerConnectionStateMessage(mqttMessage));
-    Serial.print(mqttMessage.topic);
-    Serial.println(mqttMessage.body);
+    print(mqttMessage);
     reconnect();
   }
   // Allow the client to process incoming messages and maintain its connection to the server
@@ -204,8 +205,7 @@ void loop() {
     
     if (doorOpen != oldDoorIsOpen) {
       Serial.print(publishDoorStatusChangedMessage(mqttMessage, doorOpen));
-      Serial.print(mqttMessage.topic);
-      Serial.println(mqttMessage.body);
+      print(mqttMessage);
 
       oldDoorIsOpen = doorOpen;
     }
